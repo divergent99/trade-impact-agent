@@ -1,4 +1,4 @@
-# Trade Desk — Live Agent Trade Analysis
+# Trade Desk - Live Agent Trade Analysis
 
 Describe an NBA trade or signing. A LangGraph agent pulls real rosters, live stats, injury reports, and breaking news, then grades it like a front-office analyst on deadline — live, in front of you, with the reasoning visible as it happens.
 
