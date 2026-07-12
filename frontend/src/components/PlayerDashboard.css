@@ -1,0 +1,158 @@
+.players-wrap {
+  margin-top: 20px;
+}
+
+.players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.player-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.player-card-header {
+  margin-bottom: 14px;
+}
+
+.player-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+}
+
+.player-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.injury-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fall);
+  background: #fb4b4b1a;
+  border: 1px solid #fb4b4b40;
+  border-radius: 999px;
+  padding: 4px 10px;
+  margin-bottom: 12px;
+  width: fit-content;
+}
+
+.injury-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fall);
+  flex-shrink: 0;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.stat-block {
+  text-align: center;
+}
+
+.stat-block-value {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--signal);
+}
+
+.stat-block-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+  margin-top: 2px;
+}
+
+.pct-bars {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pct-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+}
+
+.pct-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pct-track {
+  height: 5px;
+  background: var(--navy-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pct-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--signal), #ffb066);
+  border-radius: 999px;
+}
+
+.pct-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--paper);
+  text-align: right;
+}
+
+.bio-grid {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bio-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.bio-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+  text-transform: uppercase;
+}
+
+.bio-value {
+  color: var(--paper);
+}
+
+.stats-note {
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--muted-2);
+  font-style: italic;
+}

@@ -1,0 +1,57 @@
+.feed-wrap {
+  margin-top: 20px;
+}
+
+.feed-header {
+  margin-bottom: 12px;
+}
+
+.feed-body {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--muted);
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.feed-body::-webkit-scrollbar {
+  display: none;
+}
+
+.feed-line {
+  animation: feed-in 0.25s ease both;
+  color: #b9c2d6;
+}
+
+.feed-prompt {
+  color: var(--signal);
+}
+
+.feed-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--signal);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
