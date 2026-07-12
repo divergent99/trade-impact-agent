@@ -10,7 +10,7 @@ const TEAMS = [
 
 const EXAMPLES = [
   { label: 'Lakers lose LeBron', team: 'Lakers', description: 'LeBron James signs with the Mavericks' },
-  { label: 'Mavericks lose Luka', team: 'Mavericks', description: 'Luka Doncic is traded to the Lakers' },
+  { label: 'Nuggets lose Jokic', team: 'Nuggets', description: 'Nikola Jokic is traded to the Knicks' },
   { label: '76ers trade Embiid', team: '76ers', description: 'Joel Embiid is traded to the Warriors' },
   { label: 'Celtics trade Tatum', team: 'Celtics', description: 'Jayson Tatum is traded to the Knicks' },
 ]
