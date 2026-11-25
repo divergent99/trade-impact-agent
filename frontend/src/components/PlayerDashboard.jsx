@@ -1,12 +1,15 @@
 import Card from './Card.jsx'
+import { fmt, fmtPct, seasonLabel } from '../lib/format.js'
+import { teamByLabel } from '../lib/teams.js'
 import './PlayerDashboard.css'
 
+// rough "elite" marks used only to scale the mini bars under each number
 const STAT_FIELDS = [
-  { key: 'pts', label: 'PTS' },
-  { key: 'reb', label: 'REB' },
-  { key: 'ast', label: 'AST' },
-  { key: 'stl', label: 'STL' },
-  { key: 'blk', label: 'BLK' },
+  { key: 'pts', label: 'PTS', max: 35 },
+  { key: 'reb', label: 'REB', max: 14 },
+  { key: 'ast', label: 'AST', max: 11 },
+  { key: 'stl', label: 'STL', max: 2.2 },
+  { key: 'blk', label: 'BLK', max: 3 },
 ]
 
 const PCT_FIELDS = [
@@ -15,125 +18,189 @@ const PCT_FIELDS = [
   { key: 'ft_pct', label: 'FT%' },
 ]
 
-function fmt(n, digits = 1) {
-  return typeof n === 'number' ? n.toFixed(digits) : '—'
+function initials(name = '') {
+  const parts = name.split(/\s+/).filter(Boolean)
+  return ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase() || '?'
 }
 
-function fmtPct(n) {
-  return typeof n === 'number' ? `${(n * 100).toFixed(1)}%` : '—'
+function inDeal(name, description) {
+  if (!name || !description) return false
+  const d = description.toLowerCase()
+  const parts = name.toLowerCase().split(/\s+/)
+  const last = parts[parts.length - 1]
+  return d.includes(name.toLowerCase()) || (last.length > 3 && d.includes(last))
 }
 
-function ordinal(n) {
-  if (!n) return null
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return n + (s[(v - 20) % 10] || s[v] || s[0])
-}
-
-function StatCard({ player }) {
-  const s = player.stats
-
+function Identity({ player, description, sub }) {
+  const team = teamByLabel(player.team)
+  const featured = inDeal(player.name, description)
   return (
-    <>
-      <div className="stat-grid">
-        {STAT_FIELDS.map(({ key, label }) => (
-          <div className="stat-block" key={key}>
-            <div className="stat-block-value">{fmt(s[key])}</div>
-            <div className="stat-block-label">{label}</div>
-          </div>
-        ))}
+    <div className="pr-id">
+      <div className="pr-avatar" style={{ '--team-color': team?.color || 'var(--signal)' }} aria-hidden="true">
+        {initials(player.name)}
       </div>
-
-      <div className="pct-bars">
-        {PCT_FIELDS.map(({ key, label }) => {
-          const pct = typeof s[key] === 'number' ? Math.min(s[key] * 100, 100) : 0
-          return (
-            <div className="pct-row" key={key}>
-              <span className="pct-label">{label}</span>
-              <div className="pct-track">
-                <div className="pct-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <span className="pct-value">{fmtPct(s[key])}</span>
-            </div>
-          )
-        })}
+      <div className="pr-id-text">
+        <div className="player-name">{player.name}</div>
+        <div className="player-meta">{sub}</div>
+        <div className="pr-tags">
+          {featured && <span className="pr-tag deal">In the deal</span>}
+          {player.injury?.status && (
+            <span className={`pr-tag injury${/out/i.test(player.injury.status) ? ' out' : ''}`} title={player.injury.description || ''}>
+              <span className="injury-dot" />
+              {player.injury.status}
+              {player.injury.return_date ? ` · ${player.injury.return_date}` : ''}
+            </span>
+          )}
+          {!featured && !player.injury?.status && <span className="pr-tag">Healthy</span>}
+        </div>
       </div>
-    </>
-  )
-}
-
-function BioCard({ player }) {
-  const draft = player.draft_year
-    ? `${player.draft_year}, Round ${player.draft_round}, Pick ${player.draft_number}`
-    : 'Undrafted'
-
-  const rows = [
-    { label: 'Height', value: player.height || '—' },
-    { label: 'Weight', value: player.weight ? `${player.weight} lbs` : '—' },
-    { label: 'College', value: player.college || '—' },
-    { label: 'Draft', value: draft },
-  ]
-
-  return (
-    <>
-      <div className="bio-grid">
-        {rows.map((r) => (
-          <div className="bio-row" key={r.label}>
-            <span className="bio-label">{r.label}</span>
-            <span className="bio-value">{r.value}</span>
-          </div>
-        ))}
-      </div>
-      {player.stats_note && <div className="stats-note">{player.stats_note}</div>}
-    </>
-  )
-}
-
-function InjuryBadge({ injury }) {
-  if (!injury || !injury.status) return null
-  return (
-    <div className="injury-badge" title={injury.description || ''}>
-      <span className="injury-dot" />
-      {injury.status}
-      {injury.return_date ? ` · Return ${injury.return_date}` : ''}
     </div>
   )
 }
 
-function PlayerCard({ player }) {
-  const hasStats = player.stats && typeof player.stats === 'object'
+function StatCols({ s }) {
+  const extras = [
+    s.min != null && s.min !== '' ? `${typeof s.min === 'number' ? fmt(s.min) : s.min} MIN` : null,
+    s.games_played ? `${s.games_played} GP` : null,
+    typeof s.turnover === 'number' ? `${fmt(s.turnover)} TOV` : null,
+  ].filter(Boolean)
 
   return (
-    <Card contentClassName="player-card">
-      <div className="player-card-header">
-        <div>
-          <div className="player-name">{player.name}</div>
-          <div className="player-meta">
-            {player.team}
-            {player.position ? ` · ${player.position}` : ''}
-            {hasStats && player.season ? ` · ${player.season}-${String(player.season + 1).slice(-2)}` : ''}
+    <>
+      <div className="pr-stats">
+        {STAT_FIELDS.map(({ key, label, max }) => {
+          const v = s[key]
+          const pct = typeof v === 'number' ? Math.max(4, Math.min(100, (v / max) * 100)) : 0
+          return (
+            <div className="pr-stat" key={key}>
+              <div className="pr-stat-value">{fmt(v)}</div>
+              <div className="pr-stat-bar">
+                <span style={{ width: `${pct}%` }} />
+              </div>
+              <div className="pr-stat-label">{label}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="pr-side">
+        <div className="pct-bars">
+          {PCT_FIELDS.map(({ key, label }) => {
+            const pct = typeof s[key] === 'number' ? Math.max(0, Math.min(s[key] * 100, 100)) : 0
+            return (
+              <div className="pct-row" key={key}>
+                <span className="pct-label">{label}</span>
+                <div className="pct-track" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+                  <div className="pct-fill" style={{ width: `${pct}%` }} />
+                </div>
+                <span className="pct-value">{fmtPct(s[key])}</span>
+              </div>
+            )
+          })}
+        </div>
+        {extras.length > 0 && <div className="stat-extras">{extras.join(' · ')}</div>}
+      </div>
+    </>
+  )
+}
+
+function BioCols({ player }) {
+  const draft = player.draft_year ? `'${String(player.draft_year).slice(-2)} R${player.draft_round ?? '?'}#${player.draft_number ?? '?'}` : 'Undrafted'
+  const blocks = [
+    { label: 'HT', value: player.height || '-' },
+    { label: 'WT', value: player.weight ? `${player.weight}` : '-' },
+    { label: 'DRAFT', value: draft },
+  ]
+  return (
+    <>
+      <div className="pr-stats bio">
+        {blocks.map((b) => (
+          <div className="pr-stat" key={b.label}>
+            <div className="pr-stat-value bio">{b.value}</div>
+            <div className="pr-stat-label">{b.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="pr-side">
+        <div className="pr-empty">
+          <span className="pr-empty-icon" aria-hidden="true">
+            {'∅'}
+          </span>
+          <div>
+            <div className="pr-empty-title">No season line</div>
+            <div className="pr-empty-text">{player.college || player.country || 'Bio data only'}</div>
           </div>
         </div>
       </div>
+    </>
+  )
+}
 
-      <InjuryBadge injury={player.injury} />
+function PlayerRow({ player, description }) {
+  const hasStats = player.stats && typeof player.stats === 'object'
+  const sub = [player.team, player.position].filter(Boolean).join(' · ')
+  const notes = [hasStats && player.season ? `${seasonLabel(player.season)} season` : null, player.match_note, player.stats_note].filter(Boolean)
 
-      {hasStats ? <StatCard player={player} /> : <BioCard player={player} />}
+  return (
+    <Card contentClassName="player-row">
+      <div className="pr-grid">
+        <Identity player={player} description={description} sub={sub} />
+        {hasStats ? <StatCols s={player.stats} /> : <BioCols player={player} />}
+      </div>
+      {notes.length > 0 && <div className="stats-note">{notes.join(' · ')}</div>}
     </Card>
   )
 }
 
-export default function PlayerDashboard({ players }) {
-  if (!players || players.length === 0) return null
+function PlayerSkeleton({ name }) {
+  return (
+    <Card contentClassName="player-row">
+      <div className="pr-grid">
+        <div className="pr-id">
+          <div className="pr-avatar skel" />
+          <div className="pr-id-text">
+            <div className="player-name">{name}</div>
+            <div className="player-meta">Pulling stats and injury report…</div>
+          </div>
+        </div>
+        <div className="pr-stats">
+          {STAT_FIELDS.map((f) => (
+            <div className="pr-stat" key={f.key}>
+              <div className="skel" style={{ height: 20, width: '70%', margin: '0 auto' }} />
+              <div className="pr-stat-label">{f.label}</div>
+            </div>
+          ))}
+        </div>
+        <div className="pr-side">
+          <div className="skel skel-line" />
+          <div className="skel skel-line" />
+          <div className="skel skel-line" style={{ width: '70%' }} />
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+export default function PlayerDashboard({ players, pending = [], description }) {
+  const loadedNames = new Set(players.map((p) => (p.name || '').toLowerCase()))
+  const waiting = pending.filter((n) => !loadedNames.has(n.toLowerCase()))
+  if (!players.length && !waiting.length) return null
+
+  // players named in the move first, then everyone else
+  const sorted = [...players].sort((a, b) => inDeal(b.name, description) - inDeal(a.name, description))
 
   return (
     <div className="players-wrap">
-      <span className="eyebrow" style={{ marginBottom: 12, display: 'inline-flex' }}>
-        Player stat sheet
-      </span>
-      <div className="players-grid">
-        {players.map((p) => (
-          <PlayerCard player={p} key={p.name} />
+      <div className="section-head">
+        <span className="eyebrow">Player stat sheet</span>
+        <span className="section-meta">Raw API numbers, never retyped by the model</span>
+      </div>
+      <div className="players-list">
+        {sorted.map((p) => (
+          <PlayerRow player={p} key={p.name} description={description} />
+        ))}
+        {waiting.map((n) => (
+          <PlayerSkeleton name={n} key={`pending-${n}`} />
         ))}
       </div>
     </div>

@@ -3,7 +3,7 @@ Quick standalone test of the balldontlie API — run this directly to see
 exactly what the API returns, no agent/LLM involved.
 
 Usage:
-    python test_balldontlie.py
+    python diagnose_balldontlie.py
 """
 import os
 import httpx
