@@ -29,7 +29,7 @@ from tools import TOOL_FUNCTIONS, TOOL_SCHEMAS, current_season, season_label, su
 GATHER_MODEL = os.environ.get("GATHER_MODEL", "claude-haiku-4-5-20251001")
 FINALIZE_MODEL = os.environ.get("FINALIZE_MODEL", "claude-sonnet-4-6")
 MAX_GATHER_TURNS = int(os.environ.get("MAX_GATHER_TURNS", "4"))
-TOOL_TIMEOUT_SECONDS = float(os.environ.get("TOOL_TIMEOUT_SECONDS", "15"))
+TOOL_TIMEOUT_SECONDS = float(os.environ.get("TOOL_TIMEOUT_SECONDS", "30"))
 MAX_TOOL_CALLS_PER_TURN = 6
 
 _client: AsyncAnthropic | None = None
