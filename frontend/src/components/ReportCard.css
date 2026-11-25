@@ -25,6 +25,9 @@
 }
 
 .report-team-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 11px;
@@ -461,4 +464,24 @@
   font-family: var(--font-mono);
   font-size: 9.5px;
   color: var(--muted-2);
+}
+
+.grade-stack {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.grade-team-logo {
+  position: absolute;
+  right: -10px;
+  bottom: -6px;
+  background: var(--navy-2);
+  border-radius: 50%;
+  padding: 3px;
+  box-sizing: content-box;
+  border: 1px solid var(--line);
+}
+
+.counterpart-logo {
+  flex-shrink: 0;
 }

@@ -427,6 +427,7 @@ async def get_player_stats(player_name: str, season: int | None = None) -> dict:
             "match": quality,
             "team": (player.get("team") or {}).get("full_name"),
             "position": player.get("position") or None,
+            "jersey": player.get("jersey_number") or None,
             "height": player.get("height"),
             "weight": player.get("weight"),
             "college": player.get("college"),

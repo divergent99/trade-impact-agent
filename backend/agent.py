@@ -155,7 +155,7 @@ def player_from_result(result: dict) -> dict:
     """Raw stats straight from the API for the dashboard, never transcribed by
     the LLM, so the numbers on screen can't drift from what was returned."""
     keys = [
-        "team", "position", "season", "stats", "height", "weight", "college", "country",
+        "team", "position", "jersey", "season", "stats", "height", "weight", "college", "country",
         "draft_year", "draft_round", "draft_number", "stats_note", "injury", "match_note",
     ]
     return {"name": result.get("player"), **{k: result.get(k) for k in keys}}

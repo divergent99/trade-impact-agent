@@ -1,5 +1,6 @@
 import { GRADE_COLORS, gradeColor, timeAgo } from '../lib/format.js'
 import { teamByValue } from '../lib/teams.js'
+import TeamLogo from './TeamLogo.jsx'
 
 const SCALE = [
   { g: 'A', text: 'Franchise-altering win' },
@@ -45,6 +46,7 @@ export function HistoryPanel({ history, activeId, onSelect, onClear, disabled })
                 <span className="history-grade" style={{ color: gradeColor(h.report.trade_grade) }}>
                   {h.report.trade_grade}
                 </span>
+                {teamByValue(h.team) && <TeamLogo team={teamByValue(h.team)} size={26} className="history-logo" />}
                 <span className="history-body">
                   <span className="history-desc">{h.description}</span>
                   <span className="history-meta">
