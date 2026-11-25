@@ -28,7 +28,16 @@ Type a move — *"LeBron James signs with the Mavericks"* — and pick the team 
 3. Searches recent news for trade context and reactions
 4. Reasons through it and produces a graded report — letter grade, win-probability delta, stat comparisons, a historical parallel when one genuinely fits, and cited sources
 
-You watch it happen live: a terminal-style feed streams each tool call as the agent makes it, followed by a stat dashboard and the final report card.
+You watch it happen live: each tool call shows up the moment it starts (with a spinner, then a result summary and timing), player stat cards fill in as their lookups finish, and the report card lands at the end.
+
+The report includes a letter grade (A+ to F), win-outlook delta, a confidence level, upside and risk bullets, a grade for the other team in the deal, a before/after stat breakdown, the analyst take, and cited sources.
+
+Other things the UI does:
+
+- **Recent analyses** are saved locally, so you can flip back to an earlier report without re-running it
+- **Copy summary / Copy link**: plain-text report for Slack or WhatsApp, or a `?team=&move=` link that pre-fills the form
+- **Stop** a run mid-way (the backend cancels the agent too, so no tokens get burned for nothing)
+- **Backend health indicator** with warnings when the server is offline or missing API keys
 
 The agent decides on its own which players matter enough to check — nobody hand-picks who gets analyzed.
 
@@ -80,6 +89,9 @@ flowchart LR
 - **Tool calls execute concurrently**, not sequentially — when the agent needs both teams' rosters, it fires both requests at once via `asyncio.gather`.
 - **Structured output is forced**, not parsed. The final report is generated via a tool call with `tool_choice` forced to `finalize_report`, guaranteeing valid JSON every time instead of hoping the model formats free text correctly.
 - **Three-tier stat fallback.** `season_averages` (highest API tier) → averaging individual game logs ourselves (mid tier) → bio data only (free tier). The app degrades gracefully instead of breaking if a data source isn't available.
+- **Live events, not batched ones.** Nodes push events through a callback in the LangGraph run config, so tool start/finish reach the UI as they happen instead of after the whole turn.
+- **Bounded and fail-safe.** The gather loop is capped (`MAX_GATHER_TURNS`), the whole run has a timeout, every tool returns `{"error": ...}` instead of raising, and any failure becomes an `error` SSE event so the UI never hangs on a spinner.
+- **Season-aware.** The current season is computed from today's date (falls back to last season if no games yet). Game-log averages skip DNPs and playoff games, and shooting % is weighted by attempts.
 - **Raw data bypasses the LLM where it matters.** Player stats and injury status are captured directly from tool results and sent to the frontend as-is — never transcribed by Claude into the report, so the dashboard numbers can't drift from what the API actually returned.
 
 ## Tech stack
@@ -101,7 +113,8 @@ trade-impact-agent/
 │   ├── agent.py              # LangGraph graph: gather -> finalize
 │   ├── tools.py               # balldontlie + Tavily tool implementations
 │   ├── main.py                 # FastAPI app, SSE streaming endpoint
-│   ├── test_balldontlie.py     # standalone API diagnostic script
+│   ├── diagnose_balldontlie.py # standalone API diagnostic script
+│   ├── tests/                  # offline tests (fake LLM + mocked HTTP)
 │   └── requirements.txt
 └── frontend/
     ├── src/
@@ -131,6 +144,13 @@ npm install
 npm run dev              # -> http://localhost:5173
 ```
 
+**Tests** (no API keys needed)
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest -q
+```
+
 ### Environment variables
 
 | Key | Where to get it | Notes |
@@ -139,11 +159,13 @@ npm run dev              # -> http://localhost:5173
 | `TAVILY_API_KEY` | [tavily.com](https://tavily.com) | |
 | `BALLDONTLIE_API_KEY` | [balldontlie.io](https://balldontlie.io) | Free tier works with reduced fidelity; **ALL-STAR ($9.99/mo)** unlocks real per-game stats and injury data |
 
+Optional backend settings (see `backend/.env.example`): `PORT`, `ALLOWED_ORIGINS`, `GATHER_MODEL`, `FINALIZE_MODEL`, `MAX_GATHER_TURNS`, `RUN_TIMEOUT_SECONDS`, `MAX_CONCURRENT_RUNS`, `RATE_LIMIT_PER_HOUR` (per IP, protects your API spend on a public deploy).
+
 ## Deployment
 
 Built to deploy as two separate services:
 
-- **Backend -> [Railway](https://railway.app)** — set the 3 environment variables above in the Railway dashboard, Railway auto-detects the FastAPI app via `main.py`.
+- **Backend -> [Railway](https://railway.app)** — set the 3 environment variables above in the Railway dashboard, Railway auto-detects the FastAPI app via `main.py` (it reads Railway's `PORT`). Set `ALLOWED_ORIGINS` to your Vercel URL.
 - **Frontend -> [Vercel](https://vercel.com)** — set `VITE_API_URL` to your deployed Railway backend URL before building.
 
 ## License

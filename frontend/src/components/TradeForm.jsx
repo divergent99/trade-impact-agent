@@ -1,54 +1,80 @@
 import Card from './Card.jsx'
+import { EXAMPLES, TEAMS } from '../lib/teams.js'
 
-const TEAMS = [
-  'Hawks', 'Celtics', 'Nets', 'Hornets', 'Bulls', 'Cavaliers', 'Mavericks',
-  'Nuggets', 'Pistons', 'Warriors', 'Rockets', 'Pacers', 'Clippers', 'Lakers',
-  'Grizzlies', 'Heat', 'Bucks', 'Timberwolves', 'Pelicans', 'Knicks',
-  'Thunder', 'Magic', '76ers', 'Suns', 'Trail Blazers', 'Kings', 'Spurs',
-  'Raptors', 'Jazz', 'Wizards',
-]
+const MAX_LEN = 500
+const MIN_LEN = 5
 
-const EXAMPLES = [
-  { label: 'Lakers lose LeBron', team: 'Lakers', description: 'LeBron James signs with the Mavericks' },
-  { label: 'Nuggets lose Jokic', team: 'Nuggets', description: 'Nikola Jokic is traded to the Knicks' },
-  { label: '76ers trade Embiid', team: '76ers', description: 'Joel Embiid is traded to the Warriors' },
-  { label: 'Celtics trade Tatum', team: 'Celtics', description: 'Jayson Tatum is traded to the Knicks' },
-]
+export default function TradeForm({
+  team,
+  setTeam,
+  tradeDescription,
+  setTradeDescription,
+  onSubmit,
+  onCancel,
+  onExampleClick,
+  loading,
+  elapsed,
+}) {
+  const len = tradeDescription.trim().length
+  const valid = len >= MIN_LEN && len <= MAX_LEN
 
-export default function TradeForm({ team, setTeam, tradeDescription, setTradeDescription, onSubmit, onExampleClick, loading }) {
+  const submit = () => {
+    if (!loading && valid) onSubmit()
+  }
+
   return (
     <Card animated={loading}>
       <form
+        className="trade-form"
         onSubmit={(e) => {
           e.preventDefault()
-          onSubmit()
+          submit()
         }}
       >
-        <div className="form-row">
-          <label htmlFor="team">Team you're evaluating for</label>
-          <select id="team" value={team} onChange={(e) => setTeam(e.target.value)} disabled={loading}>
-            {TEAMS.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+        <div className="form-grid">
+          <div className="form-row">
+            <label htmlFor="team">Evaluating for</label>
+            <select id="team" value={team} onChange={(e) => setTeam(e.target.value)} disabled={loading}>
+              {['East', 'West'].map((conf) => (
+                <optgroup label={`${conf}ern Conference`} key={conf}>
+                  {TEAMS.filter((t) => t.conf === conf).map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-row">
+            <label htmlFor="trade">
+              The move
+              <span className={`char-count${len > MAX_LEN ? ' over' : ''}`}>
+                {len}/{MAX_LEN}
+              </span>
+            </label>
+            <textarea
+              id="trade"
+              rows={3}
+              maxLength={MAX_LEN + 50}
+              placeholder="e.g. Nikola Jokic is traded to the Knicks for two first-round picks"
+              value={tradeDescription}
+              onChange={(e) => setTradeDescription(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  submit()
+                }
+              }}
+              disabled={loading}
+              required
+            />
+          </div>
         </div>
 
-        <div className="form-row">
-          <label htmlFor="trade">The move</label>
-          <textarea
-            id="trade"
-            rows={3}
-            placeholder="e.g. LeBron James signs with the Mavericks"
-            value={tradeDescription}
-            onChange={(e) => setTradeDescription(e.target.value)}
-            disabled={loading}
-            required
-          />
-        </div>
-
-        <div className="example-chips">
+        <div className="example-chips" role="group" aria-label="Example trades">
+          <span className="chips-label">Try</span>
           {EXAMPLES.map((ex) => (
             <button
               key={ex.label}
@@ -62,20 +88,33 @@ export default function TradeForm({ team, setTeam, tradeDescription, setTradeDes
           ))}
         </div>
 
-        <button className={`btn-primary${loading ? ' is-loading' : ''}`} type="submit" disabled={loading || !tradeDescription.trim()}>
-          {loading ? (
-            <span className="btn-loading">
-              Analyzing
-              <span className="dots">
-                <span />
-                <span />
-                <span />
+        <div className="form-actions">
+          <button
+            className={`btn-primary${loading ? ' is-loading' : ''}`}
+            type="submit"
+            disabled={loading || !valid}
+          >
+            {loading ? (
+              <span className="btn-loading">
+                Analyzing
+                <span className="dots">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+                <span className="btn-timer">{(elapsed / 1000).toFixed(0)}s</span>
               </span>
-            </span>
-          ) : (
-            'Run the trade'
+            ) : (
+              'Run the trade'
+            )}
+          </button>
+          {loading && (
+            <button type="button" className="btn-ghost" onClick={onCancel}>
+              Stop
+            </button>
           )}
-        </button>
+        </div>
+        {!loading && <div className="form-hint">Ctrl / Cmd + Enter to run</div>}
       </form>
     </Card>
   )
