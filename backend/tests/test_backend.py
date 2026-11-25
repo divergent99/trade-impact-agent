@@ -306,3 +306,13 @@ def test_rate_limit(fake_env, monkeypatch):
     _stream()
     r = TestClient(main.app).post("/analyze/stream", json={"team": "Knicks", "trade_description": "Jokic to the Knicks"})
     assert r.status_code == 429
+
+
+def test_parse_origins_forgives_formatting():
+    assert main.parse_origins(" https://Trade-Desk.vercel.app/ , 'http://localhost:5173/'") == [
+        "https://trade-desk.vercel.app",
+        "http://localhost:5173",
+    ]
+    assert main.parse_origins("trade-desk.vercel.app") == ["https://trade-desk.vercel.app"]
+    assert main.parse_origins("") == ["*"]
+    assert main.parse_origins("*") == ["*"]

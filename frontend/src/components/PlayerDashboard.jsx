@@ -1,6 +1,8 @@
 import Card from './Card.jsx'
 import { fmt, fmtPct, seasonLabel } from '../lib/format.js'
 import { teamByLabel } from '../lib/teams.js'
+import Jersey from './Jersey.jsx'
+import TeamLogo from './TeamLogo.jsx'
 import './PlayerDashboard.css'
 
 // rough "elite" marks used only to scale the mini bars under each number
@@ -18,11 +20,6 @@ const PCT_FIELDS = [
   { key: 'ft_pct', label: 'FT%' },
 ]
 
-function initials(name = '') {
-  const parts = name.split(/\s+/).filter(Boolean)
-  return ((parts[0]?.[0] || '') + (parts[parts.length - 1]?.[0] || '')).toUpperCase() || '?'
-}
-
 function inDeal(name, description) {
   if (!name || !description) return false
   const d = description.toLowerCase()
@@ -36,12 +33,15 @@ function Identity({ player, description, sub }) {
   const featured = inDeal(player.name, description)
   return (
     <div className="pr-id">
-      <div className="pr-avatar" style={{ '--team-color': team?.color || 'var(--signal)' }} aria-hidden="true">
-        {initials(player.name)}
+      <div className="pr-jersey" style={{ '--team-color': team?.color || 'var(--signal)' }}>
+        <Jersey team={team} number={player.jersey} name={player.name} size={62} />
       </div>
       <div className="pr-id-text">
         <div className="player-name">{player.name}</div>
-        <div className="player-meta">{sub}</div>
+        <div className="player-meta">
+          {team && <TeamLogo team={team} size={16} className="pr-team-logo" />}
+          <span className="pr-meta-text">{sub}</span>
+        </div>
         <div className="pr-tags">
           {featured && <span className="pr-tag deal">In the deal</span>}
           {player.injury?.status && (
@@ -157,7 +157,7 @@ function PlayerSkeleton({ name }) {
     <Card contentClassName="player-row">
       <div className="pr-grid">
         <div className="pr-id">
-          <div className="pr-avatar skel" />
+          <div className="pr-jersey skel pr-jersey-skel" />
           <div className="pr-id-text">
             <div className="player-name">{name}</div>
             <div className="player-meta">Pulling stats and injury report…</div>

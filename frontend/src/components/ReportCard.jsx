@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import Card from './Card.jsx'
 import { copyText, gradeColor, reportToText } from '../lib/format.js'
-import { teamByValue } from '../lib/teams.js'
+import { teamByLabel, teamByValue } from '../lib/teams.js'
+import TeamLogo from './TeamLogo.jsx'
 import './ReportCard.css'
 
 function GradeShield({ grade, size = 'lg' }) {
@@ -112,13 +113,17 @@ export default function ReportCard({ report, sources = [], team, description, on
       <Card contentClassName="report">
         <div className="report-move">
           <span className="report-team-tag" style={{ '--team-color': teamInfo?.color || 'var(--signal)' }}>
+            {teamInfo && <TeamLogo team={teamInfo} size={18} />}
             {teamInfo?.abbr || team}
           </span>
           <span className="report-move-text">{description}</span>
         </div>
 
         <div className="report-top">
-          <GradeShield grade={report.trade_grade} />
+          <div className="grade-stack">
+            <GradeShield grade={report.trade_grade} />
+            {teamInfo && <TeamLogo team={teamInfo} size={34} className="grade-team-logo" />}
+          </div>
           <div className="report-headline-block">
             <span className="eyebrow">Grade for the {teamInfo?.label || team}</span>
             <h2 className="report-headline">{report.headline}</h2>
@@ -137,6 +142,9 @@ export default function ReportCard({ report, sources = [], team, description, on
         {report.counterpart && (
           <div className="counterpart">
             <GradeShield grade={report.counterpart.grade} size="sm" />
+            {teamByLabel(report.counterpart.team) && (
+              <TeamLogo team={teamByLabel(report.counterpart.team)} size={30} className="counterpart-logo" />
+            )}
             <div>
               <div className="counterpart-team">Other side: {report.counterpart.team}</div>
               <p>{report.counterpart.take}</p>

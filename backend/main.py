@@ -25,7 +25,22 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 RUN_TIMEOUT_SECONDS = float(os.environ.get("RUN_TIMEOUT_SECONDS", "150"))
 MAX_CONCURRENT_RUNS = int(os.environ.get("MAX_CONCURRENT_RUNS", "4"))
 RATE_LIMIT_PER_HOUR = int(os.environ.get("RATE_LIMIT_PER_HOUR", "20"))  # per client IP, 0 disables
-ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+def parse_origins(raw: str) -> list[str]:
+    """Browsers send the Origin as scheme://host[:port] with no path or
+    trailing slash, and CORS matching is exact. Forgive the usual copy-paste
+    slips: whitespace, quotes, trailing slashes, uppercase, a missing scheme."""
+    out = []
+    for o in raw.split(","):
+        o = o.strip().strip("'\"").rstrip("/").lower()
+        if not o:
+            continue
+        if o != "*" and "://" not in o:
+            o = "https://" + o
+        out.append(o)
+    return out or ["*"]
+
+
+ALLOWED_ORIGINS = parse_origins(os.environ.get("ALLOWED_ORIGINS", "*"))
 
 
 @asynccontextmanager
@@ -33,6 +48,7 @@ async def lifespan(app: FastAPI):
     missing = [k for k, v in {"ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY"), "BALLDONTLIE_API_KEY": bdl_key(), "TAVILY_API_KEY": tavily_key()}.items() if not v]
     if missing:
         log.warning("Missing env vars: %s (related features will degrade)", ", ".join(missing))
+    log.info("CORS allowed origins: %s", ALLOWED_ORIGINS)
     yield
     await close_http_client()
 

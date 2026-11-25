@@ -835,3 +835,45 @@ button {
   font-size: 11px;
   color: var(--muted-2);
 }
+
+/* ---------- Team logos ---------- */
+.team-logo {
+  display: inline-block;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.team-logo-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--paper);
+  background: color-mix(in srgb, var(--team-color) 35%, var(--navy-3));
+  border: 1px solid color-mix(in srgb, var(--team-color) 70%, transparent);
+}
+
+.select-wrap {
+  position: relative;
+}
+
+.select-wrap select {
+  width: 100%;
+  padding-left: 46px;
+}
+
+.select-logo {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.history-logo {
+  margin-left: -4px;
+}

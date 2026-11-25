@@ -29,7 +29,7 @@ from tools import TOOL_FUNCTIONS, TOOL_SCHEMAS, current_season, season_label, su
 GATHER_MODEL = os.environ.get("GATHER_MODEL", "claude-haiku-4-5-20251001")
 FINALIZE_MODEL = os.environ.get("FINALIZE_MODEL", "claude-sonnet-4-6")
 MAX_GATHER_TURNS = int(os.environ.get("MAX_GATHER_TURNS", "4"))
-TOOL_TIMEOUT_SECONDS = float(os.environ.get("TOOL_TIMEOUT_SECONDS", "15"))
+TOOL_TIMEOUT_SECONDS = float(os.environ.get("TOOL_TIMEOUT_SECONDS", "30"))
 MAX_TOOL_CALLS_PER_TURN = 6
 
 _client: AsyncAnthropic | None = None
@@ -155,7 +155,7 @@ def player_from_result(result: dict) -> dict:
     """Raw stats straight from the API for the dashboard, never transcribed by
     the LLM, so the numbers on screen can't drift from what was returned."""
     keys = [
-        "team", "position", "season", "stats", "height", "weight", "college", "country",
+        "team", "position", "jersey", "season", "stats", "height", "weight", "college", "country",
         "draft_year", "draft_round", "draft_number", "stats_note", "injury", "match_note",
     ]
     return {"name": result.get("player"), **{k: result.get(k) for k in keys}}

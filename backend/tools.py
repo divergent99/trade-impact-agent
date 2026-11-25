@@ -8,9 +8,12 @@ of the whole run dying on one flaky API call.
 """
 import asyncio
 import datetime as dt
+import logging
 import os
 import re
+import time
 import unicodedata
+from collections import deque
 
 import httpx
 
@@ -18,7 +21,6 @@ BDL_BASE = "https://api.balldontlie.io/v1"
 NBA_V1_BASE = "https://api.balldontlie.io/nba/v1"  # newer endpoint family (injuries live here on some plans)
 
 HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-MAX_429_RETRIES = 2
 
 
 def bdl_key() -> str:
@@ -67,10 +69,93 @@ class ToolError(Exception):
     """Raised inside tool internals, converted to {"error": ...} at the edge."""
 
 
+log = logging.getLogger("trade-desk.bdl")
+
+# balldontlie plans are rate limited per minute (free 5, ALL-STAR 60, GOAT 600).
+# Pace requests client-side so a burst of parallel tool calls queues briefly
+# instead of tripping 429s and cascading into timeouts.
+BDL_REQUESTS_PER_MIN = int(os.environ.get("BDL_REQUESTS_PER_MIN", "55"))
+CACHE_TTL_SECONDS = float(os.environ.get("BDL_CACHE_TTL_SECONDS", "600"))
+
+
+class RateLimited(Exception):
+    pass
+
+
+class _MinuteWindow:
+    """Sliding 60s window limiter shared by every balldontlie call in the process."""
+
+    def __init__(self, per_minute: int):
+        self.per_minute = max(1, per_minute)
+        self.stamps: deque = deque()
+        self.lock = asyncio.Lock()
+
+    async def acquire(self):
+        while True:
+            async with self.lock:
+                now = time.monotonic()
+                while self.stamps and now - self.stamps[0] >= 60:
+                    self.stamps.popleft()
+                if len(self.stamps) < self.per_minute:
+                    self.stamps.append(now)
+                    return
+                wait = 60 - (now - self.stamps[0]) + 0.05
+            await asyncio.sleep(min(wait, 2.0))
+
+
+_window: _MinuteWindow | None = None
+
+
+def _limiter() -> _MinuteWindow:
+    global _window
+    if _window is None:
+        _window = _MinuteWindow(BDL_REQUESTS_PER_MIN)
+    return _window
+
+
+# endpoints this API key's plan can't use (401/403/404), learned at runtime so
+# we stop spending rate limit on calls that will never work
+_unsupported: set[str] = set()
+
+
+def _mark_unsupported(base: str, path: str, resp: httpx.Response):
+    if resp.status_code in (401, 403, 404):
+        if f"{base}{path}" not in _unsupported:
+            log.info("balldontlie %s%s -> %s, skipping it from now on", base.split("/")[-1], path, resp.status_code)
+        _unsupported.add(f"{base}{path}")
+
+
+def _supported(base: str, path: str) -> bool:
+    return f"{base}{path}" not in _unsupported
+
+
+class _TTLCache:
+    def __init__(self, ttl: float):
+        self.ttl = ttl
+        self.data: dict = {}
+
+    def get(self, key):
+        hit = self.data.get(key)
+        if hit and time.monotonic() - hit[0] < self.ttl:
+            return hit[1]
+        return None
+
+    def set(self, key, value):
+        if len(self.data) > 2000:
+            self.data.clear()
+        self.data[key] = (time.monotonic(), value)
+
+
+_player_cache = _TTLCache(CACHE_TTL_SECONDS * 6)  # name -> player record barely changes
+_stats_cache = _TTLCache(CACHE_TTL_SECONDS)
+_injury_cache = _TTLCache(CACHE_TTL_SECONDS / 2)
+_roster_cache = _TTLCache(CACHE_TTL_SECONDS)
+
+
 async def _bdl_get(path: str, params: dict | None = None, base: str = BDL_BASE) -> httpx.Response:
-    """GET against balldontlie with backoff on 429 and one retry on network
-    blips. Several tool calls fire at once on purpose, which makes the rate
-    limit easy to trip on lower tiers."""
+    """Paced GET against balldontlie. One retry on network blips or a short
+    429; a longer 429 raises RateLimited immediately so callers stop instead of
+    piling fallback calls onto an exhausted quota."""
     if not bdl_key():
         raise ToolError("BALLDONTLIE_API_KEY is not set on the server")
 
@@ -79,26 +164,33 @@ async def _bdl_get(path: str, params: dict | None = None, base: str = BDL_BASE) 
     headers = {"Authorization": bdl_key()}
     last_exc: Exception | None = None
 
-    for attempt in range(MAX_429_RETRIES + 1):
+    for attempt in range(2):
+        await _limiter().acquire()
+        started = time.perf_counter()
         try:
             resp = await client.get(url, headers=headers, params=params)
         except (httpx.TimeoutException, httpx.TransportError) as e:
             last_exc = e
-            if attempt == MAX_429_RETRIES:
-                break
-            await asyncio.sleep(0.6 * (attempt + 1))
+            log.warning("balldontlie %s failed: %s", path, type(e).__name__)
+            await asyncio.sleep(0.5)
             continue
+        log.info("balldontlie %s %s %dms", path, resp.status_code, (time.perf_counter() - started) * 1000)
 
-        if resp.status_code != 429 or attempt == MAX_429_RETRIES:
+        if resp.status_code != 429:
             return resp
         retry_after = resp.headers.get("Retry-After")
         try:
-            delay = min(float(retry_after), 5.0) if retry_after else 1.2 * (attempt + 1)
+            delay = float(retry_after) if retry_after else 2.0
         except ValueError:
-            delay = 1.2 * (attempt + 1)
+            delay = 2.0
+        if attempt == 1 or delay > 3:
+            raise RateLimited()
         await asyncio.sleep(delay)
 
     raise ToolError(f"balldontlie unreachable ({type(last_exc).__name__})")
+
+
+RATE_LIMIT_MSG = "balldontlie rate limit reached for this API plan; try again in a minute"
 
 
 def _explain_status(resp: httpx.Response) -> str:
@@ -225,12 +317,19 @@ async def get_team_roster(team_name: str) -> dict:
         if not team:
             return {"error": f"No NBA team found matching '{team_name}'"}
 
+        cached = _roster_cache.get(team["id"])
+        if cached:
+            return cached
+
         params = {"team_ids[]": team["id"], "per_page": 100}
         # /players/active excludes retired players; it's a paid endpoint, so
         # fall back to /players (which includes historical players) if needed
-        resp = await _bdl_get("/players/active", params=params)
         roster_note = None
-        if resp.status_code != 200:
+        resp = None
+        if _supported(BDL_BASE, "/players/active"):
+            resp = await _bdl_get("/players/active", params=params)
+            _mark_unsupported(BDL_BASE, "/players/active", resp)
+        if resp is None or resp.status_code != 200:
             resp = await _bdl_get("/players", params=params)
             roster_note = "Active-roster endpoint unavailable on this plan; list may include former players"
         if resp.status_code != 200:
@@ -249,7 +348,10 @@ async def get_team_roster(team_name: str) -> dict:
         }
         if roster_note:
             result["note"] = roster_note
+        _roster_cache.set(team["id"], result)
         return result
+    except RateLimited:
+        return {"error": RATE_LIMIT_MSG}
     except ToolError as e:
         return {"error": str(e)}
     except Exception as e:  # never let a tool take down the run
@@ -262,7 +364,10 @@ async def get_team_roster(team_name: str) -> dict:
 
 async def _search_players(term: str, active: bool) -> list[dict]:
     path = "/players/active" if active else "/players"
+    if not _supported(BDL_BASE, path):
+        return []
     resp = await _bdl_get(path, params={"search": term, "per_page": 100})
+    _mark_unsupported(BDL_BASE, path, resp)
     if resp.status_code != 200:
         return []
     return resp.json().get("data", [])
@@ -278,26 +383,37 @@ async def find_player(name: str) -> tuple[dict | None, str]:
          first OR last name.
     So we try progressively looser search terms but only accept a result whose
     normalized full name equals the query. Active players are preferred so a
-    retired namesake never wins. Fuzzy fallbacks are flagged as such.
+    retired namesake never wins. Results are cached, so re-runs and repeat
+    lookups cost no API calls. Usually this is a single request.
     """
     target = normalize_name(name)
     if not target:
         return None, "none"
+    cached = _player_cache.get(target)
+    if cached:
+        return cached
+
     parts = target.split()
-    terms = [name.strip()] + ([parts[-1], parts[0]] if len(parts) > 1 else [])
+    # last name alone is the most reliable single search for hyphenated or
+    # accented names ("Karl-Anthony Towns", "Jokić")
+    terms = [name.strip()] + ([parts[-1]] if len(parts) > 1 else [])
 
     seen: dict[int, dict] = {}
     for active in (True, False):
+        if not active and seen:
+            break  # active search found candidates; don't spend calls on retired players
         for term in terms:
             for p in await _search_players(term, active):
                 seen.setdefault(p["id"], p)
                 if normalize_name(_full_name(p)) == target:
+                    _player_cache.set(target, (p, "exact"))
                     return p, "exact"
 
     # fuzzy: every query token appears somewhere in the candidate's name
     for p in seen.values():
         cand = normalize_name(_full_name(p)).split()
         if all(any(c.startswith(t) for c in cand) for t in parts):
+            _player_cache.set(target, (p, "fuzzy"))
             return p, "fuzzy"
     return None, "none"
 
@@ -358,53 +474,79 @@ def average_games(games: list[dict]) -> dict | None:
     return out
 
 
-async def _season_from_game_logs(player_id: int, season: int) -> dict | None:
+async def _season_from_game_logs(player_id: int, season: int) -> tuple[dict | None, bool]:
+    """Returns (averages, api_ok). api_ok=False means the endpoint failed,
+    as opposed to working fine and returning zero games."""
     games: list[dict] = []
     cursor = None
-    for _ in range(3):  # 3 pages x 100 covers a full season plus playoffs
+    for _ in range(2):  # 100 per page; a second page only matters late in the season
         params = {"player_ids[]": player_id, "seasons[]": season, "per_page": 100}
         if cursor:
             params["cursor"] = cursor
         resp = await _bdl_get("/stats", params=params)
         if resp.status_code != 200:
-            break
+            _mark_unsupported(BDL_BASE, "/stats", resp)
+            return None, False
         body = resp.json()
         games.extend(body.get("data", []))
         cursor = (body.get("meta") or {}).get("next_cursor")
         if not cursor:
             break
-    return average_games(games)
+    return average_games(games), True
 
 
-async def _season_stats(player_id: int, season: int) -> tuple[dict | None, str | None]:
-    """Three tiers: precomputed season_averages -> averaged game logs -> nothing."""
-    resp = await _bdl_get("/season_averages", params={"season": season, "player_id": player_id})
-    if resp.status_code == 200:
-        data = resp.json().get("data") or []
-        if data:
-            return data[0], None
-    averaged = await _season_from_game_logs(player_id, season)
-    if averaged:
-        return averaged, "Averaged from individual regular-season games"
-    return None, None
+async def _season_stats(player_id: int, season: int) -> tuple[dict | None, str | None, bool]:
+    """Precomputed season_averages -> averaged game logs -> nothing.
+    Returns (stats, note, api_ok). Cached per player+season."""
+    key = (player_id, season)
+    cached = _stats_cache.get(key)
+    if cached:
+        return cached
+
+    result = (None, None, False)
+    if _supported(BDL_BASE, "/season_averages"):
+        resp = await _bdl_get("/season_averages", params={"season": season, "player_id": player_id})
+        if resp.status_code == 200:
+            data = resp.json().get("data") or []
+            if data:
+                result = (data[0], None, True)
+        elif resp.status_code == 400:
+            # legacy param shape rejected by this API version: same as unsupported
+            _unsupported.add(f"{BDL_BASE}/season_averages")
+        else:
+            _mark_unsupported(BDL_BASE, "/season_averages", resp)
+
+    if result[0] is None and _supported(BDL_BASE, "/stats"):
+        averaged, ok = await _season_from_game_logs(player_id, season)
+        result = (averaged, "Averaged from individual regular-season games" if averaged else None, ok)
+
+    if result[2]:
+        _stats_cache.set(key, result)
+    return result
 
 
 async def _get_injury_status(player_id: int) -> dict | None:
     """Current injury report entry, if any. The endpoint has lived under both
-    API bases depending on plan/version, so try both."""
+    API bases depending on plan/version; whichever fails is skipped afterwards."""
+    cached = _injury_cache.get(player_id)
+    if cached is not None:
+        return cached or None
     for base in (NBA_V1_BASE, BDL_BASE):
-        try:
-            resp = await _bdl_get("/player_injuries", params={"player_ids[]": player_id}, base=base)
-        except ToolError:
-            return None
+        if not _supported(base, "/player_injuries"):
+            continue
+        resp = await _bdl_get("/player_injuries", params={"player_ids[]": player_id}, base=base)
         if resp.status_code != 200:
+            _mark_unsupported(base, "/player_injuries", resp)
             continue
         entries = resp.json().get("data", [])
-        if not entries:
-            return None
-        e = entries[0]
-        return {"status": e.get("status"), "description": e.get("description"), "return_date": e.get("return_date")}
+        e = entries[0] if entries else None
+        info = {"status": e.get("status"), "description": e.get("description"), "return_date": e.get("return_date")} if e else {}
+        _injury_cache.set(player_id, info)
+        return info or None
     return None
+
+
+STATS_BUDGET_SECONDS = float(os.environ.get("STATS_BUDGET_SECONDS", "18"))
 
 
 async def get_player_stats(player_name: str, season: int | None = None) -> dict:
@@ -427,6 +569,7 @@ async def get_player_stats(player_name: str, season: int | None = None) -> dict:
             "match": quality,
             "team": (player.get("team") or {}).get("full_name"),
             "position": player.get("position") or None,
+            "jersey": player.get("jersey_number") or None,
             "height": player.get("height"),
             "weight": player.get("weight"),
             "college": player.get("college"),
@@ -438,30 +581,47 @@ async def get_player_stats(player_name: str, season: int | None = None) -> dict:
         if quality == "fuzzy":
             bio["match_note"] = f"No exact match for '{player_name}', closest was {bio['player']}"
 
-        (stats, note), injury = await asyncio.gather(
-            _season_stats(player["id"], season),
-            _get_injury_status(player["id"]),
-        )
-        used_season = season
-        if stats is None and season == current_season():
-            stats, note = await _season_stats(player["id"], season - 1)
-            if stats is not None:
-                used_season = season - 1
-                note = f"No {season_label(season)} games yet; showing {season_label(season - 1)}" + (
-                    f". {note}" if note else ""
-                )
+        async def stats_and_injury():
+            (stats, note, ok), injury = await asyncio.gather(
+                _season_stats(player["id"], season),
+                _get_injury_status(player["id"]),
+                return_exceptions=False,
+            )
+            used = season
+            # only fall back a season when the API worked and simply had no games yet
+            if stats is None and ok and season == current_season():
+                prev, prev_note, _ = await _season_stats(player["id"], season - 1)
+                if prev is not None:
+                    stats, used = prev, season - 1
+                    note = f"No {season_label(season)} games yet; showing {season_label(season - 1)}" + (
+                        f". {prev_note}" if prev_note else ""
+                    )
+            return stats, note, used, injury
+
+        note = None
+        try:
+            stats, note, used_season, injury = await asyncio.wait_for(stats_and_injury(), timeout=STATS_BUDGET_SECONDS)
+        except asyncio.TimeoutError:
+            stats, used_season, injury = None, season, None
+            note = "Stats lookup timed out (balldontlie slow or rate-limited); bio only"
+        except RateLimited:
+            stats, used_season, injury = None, season, None
+            note = "balldontlie rate limit reached; bio only. Re-run in a minute for full stats"
 
         result = {**bio, "season": used_season, "stats": stats}
-        if stats is None:
+        if stats is None and not note:
             note = "Season stats unavailable (plan limit or no games played); bio only"
         if note:
             result["stats_note"] = note
         if injury and injury.get("status"):
             result["injury"] = injury
         return result
+    except RateLimited:
+        return {"error": RATE_LIMIT_MSG}
     except ToolError as e:
         return {"error": str(e)}
     except Exception as e:
+        log.exception("get_player_stats failed")
         return {"error": f"get_player_stats failed: {type(e).__name__}"}
 
 

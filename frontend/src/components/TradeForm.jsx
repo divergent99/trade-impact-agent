@@ -1,5 +1,6 @@
 import Card from './Card.jsx'
-import { EXAMPLES, TEAMS } from '../lib/teams.js'
+import { EXAMPLES, TEAMS, teamByValue } from '../lib/teams.js'
+import TeamLogo from './TeamLogo.jsx'
 
 const MAX_LEN = 500
 const MIN_LEN = 5
@@ -34,7 +35,9 @@ export default function TradeForm({
         <div className="form-grid">
           <div className="form-row">
             <label htmlFor="team">Evaluating for</label>
-            <select id="team" value={team} onChange={(e) => setTeam(e.target.value)} disabled={loading}>
+            <div className="select-wrap">
+              <TeamLogo team={teamByValue(team)} size={22} className="select-logo" />
+              <select id="team" value={team} onChange={(e) => setTeam(e.target.value)} disabled={loading}>
               {['East', 'West'].map((conf) => (
                 <optgroup label={`${conf}ern Conference`} key={conf}>
                   {TEAMS.filter((t) => t.conf === conf).map((t) => (
@@ -44,7 +47,8 @@ export default function TradeForm({
                   ))}
                 </optgroup>
               ))}
-            </select>
+              </select>
+            </div>
           </div>
 
           <div className="form-row">
